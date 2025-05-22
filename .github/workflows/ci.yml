@@ -1,0 +1,62 @@
+name: CI/CD Pipeline
+
+# main 브랜치에 커밋·푸시될 때마다 실행
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # 1) 빌드 & 테스트 & 이미지 푸시
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: |
+          # pytest 같은 테스트 도구가 있다면 여기에 추가
+          pytest
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: |
+          docker build -t yoondongbin/heatmap-flask:latest .
+
+      - name: Push to Docker Hub
+        run: |
+          docker push yoondongbin/heatmap-flask:latest
+
+  # 2) 배포 (SSH로 서버에 접속해서 pull & 재시작)
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: SSH deploy to server
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: |
+            cd /path/to/heatmap-flask
+            docker-compose pull
+            docker-compose up -d --remove-orphans
