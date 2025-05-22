@@ -58,7 +58,6 @@ jobs:
           key: ${{ secrets.DEPLOY_KEY }}
           port: 22
           script: |
-            cd /path/to/heatmap-flask
             cd /home/ubuntu/heatmap-flask
             docker-compose pull
             docker-compose up -d --remove-orphans
