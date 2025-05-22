@@ -47,17 +47,11 @@ jobs:
   # 2) 배포 (SSH로 서버에 접속해서 pull & 재시작)
   deploy:
     needs: build-and-push
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
-      - name: SSH deploy to server
-        uses: appleboy/ssh-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_KEY }}
-          port: 22
-          script: |
-            cd /home/ubuntu/heatmap-flask
-            docker-compose pull
-            docker-compose up -d --remove-orphans
+      - name: Pull and restart contaniers
+        run: |
+          cd /home/ubuntu/heatmap-flask
+          docker-compose pull
+          docker-compose up -d --remove-orphans
