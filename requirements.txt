@@ -1,0 +1,5 @@
+flask
+ultralytics
+pymysql
+flask-sqlalchemy
+cryptography

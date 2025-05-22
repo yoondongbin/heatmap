@@ -1,0 +1,439 @@
+{% extends "layout.html" %}
+
+{% block title %}히트맵 비교 분석 - 인구 밀집도 히트맵{% endblock %}
+
+{% block head %}
+<style>
+    .comparison-card {
+        margin-bottom: 1.5rem;
+        transition: transform 0.3s, box-shadow 0.3s;
+    }
+    
+    .comparison-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+    }
+    
+    .comparison-card .card-img-top {
+        height: 180px;
+        object-fit: cover;
+    }
+    
+    .comparison-checkbox {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 10;
+    }
+    
+    .comparison-checkbox .form-check-input {
+        width: 1.5rem;
+        height: 1.5rem;
+    }
+    
+    .comparison-result {
+        display: none;
+        margin-top: 2rem;
+    }
+    
+    .chart-container {
+        height: 400px;
+        margin-bottom: 2rem;
+    }
+    
+    .comparison-table th, .comparison-table td {
+        text-align: center;
+        vertical-align: middle;
+    }
+    
+    .stat-difference {
+        font-weight: bold;
+    }
+    
+    .positive-diff {
+        color: #28a745;
+    }
+    
+    .negative-diff {
+        color: #dc3545;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="mb-0"><i class="fas fa-chart-bar me-2"></i>히트맵 비교 분석</h1>
+            <a href="{{ url_for('heatmap_bp.heatmap_list') }}" class="btn btn-primary">
+                <i class="fas fa-fire me-1"></i> 히트맵 목록으로
+            </a>
+        </div>
+        
+        <div class="alert alert-info mb-4">
+            <h5 class="alert-heading mb-2"><i class="fas fa-info-circle me-2"></i>분석 방법 안내</h5>
+            <p class="mb-0">비교하고 싶은 히트맵을 2개 선택하면 시간대별 인구 밀집도와 통계 정보를 비교할 수 있습니다.</p>
+        </div>
+
+        {% if analyses %}
+        <form id="comparisonForm">
+            <div class="row">
+                {% for analysis in analyses %}
+                <div class="col-md-4 col-lg-3">
+                    <div class="card comparison-card">
+                        <div class="position-relative">
+                            <div class="comparison-checkbox">
+                                <input type="checkbox" class="form-check-input" name="analysis" value="{{ analysis.upload_id }}" id="check_{{ analysis.upload_id }}">
+                            </div>
+                            
+                            <img src="{{ url_for('heatmap_bp.get_final_heatmap', upload_id=analysis.upload_id) }}" 
+                                class="card-img-top" alt="히트맵 이미지">
+                        </div>
+                        
+                        <div class="card-body">
+                            <h5 class="card-title text-truncate" title="{{ analysis.original_filename }}">
+                                {{ analysis.original_filename }}
+                            </h5>
+                            <p class="card-text mb-1 text-muted small">
+                                <i class="fas fa-calendar-alt me-1"></i> {{ analysis.analysis_date.strftime('%Y-%m-%d %H:%M') }}
+                            </p>
+                            <div class="d-flex justify-content-between mt-2">
+                                <span><i class="fas fa-users me-1"></i> {{ analysis.total_persons }}명</span>
+                                <span><i class="fas fa-clock me-1"></i> {{ '%d:%02d'|format(analysis.duration//60, analysis.duration%60) }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            
+            <div class="text-center mt-3 mb-5">
+                <button type="button" id="compareBtn" class="btn btn-primary btn-lg" disabled>
+                    <i class="fas fa-chart-line me-1"></i> 선택한 히트맵 비교하기
+                </button>
+            </div>
+        </form>
+        
+        <div id="comparisonResult" class="comparison-result">
+            <h2 class="mb-4 text-center">히트맵 비교 결과</h2>
+            
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header bg-dark text-white">
+                            <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>시간대별 인구 밀집도 비교</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="chart-container">
+                                <canvas id="comparisonChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header bg-dark text-white">
+                            <h5 class="mb-0"><i class="fas fa-table me-2"></i>통계 비교</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-bordered comparison-table" id="statsTable">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>구분</th>
+                                            <th id="analysis1Name">분석 1</th>
+                                            <th id="analysis2Name">분석 2</th>
+                                            <th>차이</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>총 탐지 인원</td>
+                                            <td id="analysis1TotalPersons">-</td>
+                                            <td id="analysis2TotalPersons">-</td>
+                                            <td id="diffTotalPersons">-</td>
+                                        </tr>
+                                        <tr>
+                                            <td>최대 동시 인원</td>
+                                            <td id="analysis1MaxPersons">-</td>
+                                            <td id="analysis2MaxPersons">-</td>
+                                            <td id="diffMaxPersons">-</td>
+                                        </tr>
+                                        <tr>
+                                            <td>평균 인구 밀도</td>
+                                            <td id="analysis1AvgDensity">-</td>
+                                            <td id="analysis2AvgDensity">-</td>
+                                            <td id="diffAvgDensity">-</td>
+                                        </tr>
+                                        <tr>
+                                            <td>동영상 길이</td>
+                                            <td id="analysis1Duration">-</td>
+                                            <td id="analysis2Duration">-</td>
+                                            <td id="diffDuration">-</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0" id="comparisonTitle1">분석 1</h5>
+                        </div>
+                        <div class="card-body text-center">
+                            <img src="" id="comparison1Image" class="img-fluid rounded mb-3" alt="히트맵 1">
+                            <a href="" id="analysis1Link" class="btn btn-outline-primary">
+                                <i class="fas fa-search-plus me-1"></i> 상세 분석 보기
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0" id="comparisonTitle2">분석 2</h5>
+                        </div>
+                        <div class="card-body text-center">
+                            <img src="" id="comparison2Image" class="img-fluid rounded mb-3" alt="히트맵 2">
+                            <a href="" id="analysis2Link" class="btn btn-outline-primary">
+                                <i class="fas fa-search-plus me-1"></i> 상세 분석 보기
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        {% else %}
+        <div class="alert alert-warning text-center py-5">
+            <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
+            <h4>비교할 히트맵이 없습니다.</h4>
+            <p class="mb-3">분석이 완료된 히트맵이 2개 이상 필요합니다.</p>
+            <div class="mt-3">
+                <a href="{{ url_for('upload_bp.upload_page') }}" class="btn btn-primary">
+                    <i class="fas fa-upload me-1"></i> 새 동영상 업로드하기
+                </a>
+                <a href="{{ url_for('heatmap_bp.heatmap_list') }}" class="btn btn-outline-primary ms-2">
+                    <i class="fas fa-list me-1"></i> 히트맵 목록 보기
+                </a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 체크박스 제어 (최대 2개)
+        const checkboxes = document.querySelectorAll('input[name="analysis"]');
+        const compareBtn = document.getElementById('compareBtn');
+        
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                const checkedBoxes = document.querySelectorAll('input[name="analysis"]:checked');
+                
+                // 2개를 초과하여 선택할 경우, 가장 최근에 선택한 체크박스를 제외하고 해제
+                if (checkedBoxes.length > 2) {
+                    this.checked = false;
+                }
+                
+                // 비교 버튼 활성화 (정확히 2개 선택되었을 때)
+                compareBtn.disabled = checkedBoxes.length !== 2;
+            });
+        });
+        
+        // 비교 버튼 클릭 이벤트
+        compareBtn.addEventListener('click', function() {
+            const selectedIds = Array.from(
+                document.querySelectorAll('input[name="analysis"]:checked')
+            ).map(cb => cb.value);
+            
+            if (selectedIds.length === 2) {
+                // 두 분석 데이터 가져오기
+                Promise.all([
+                    fetch(`{{ url_for('heatmap_bp.get_analysis_data', upload_id='')}}${selectedIds[0]}`).then(r => r.json()),
+                    fetch(`{{ url_for('heatmap_bp.get_analysis_data', upload_id='')}}${selectedIds[1]}`).then(r => r.json())
+                ])
+                .then(([analysis1, analysis2]) => {
+                    // 분석 결과 표시
+                    updateComparisonResult(analysis1, analysis2);
+                    // 결과 섹션 표시
+                    document.getElementById('comparisonResult').style.display = 'block';
+                    // 결과 섹션으로 스크롤
+                    document.getElementById('comparisonResult').scrollIntoView({ behavior: 'smooth' });
+                })
+                .catch(error => {
+                    console.error('데이터 로드 중 오류 발생:', error);
+                    alert('데이터를 불러오는 중 오류가 발생했습니다.');
+                });
+            }
+        });
+        
+        // 비교 결과 업데이트 함수
+        function updateComparisonResult(analysis1, analysis2) {
+            // 타이틀 및 히트맵 이미지 업데이트
+            document.getElementById('comparisonTitle1').textContent = analysis1.original_filename;
+            document.getElementById('comparisonTitle2').textContent = analysis2.original_filename;
+            
+            document.getElementById('comparison1Image').src = `{{ url_for('heatmap_bp.get_final_heatmap', upload_id='')}}${analysis1.upload_id}`;
+            document.getElementById('comparison2Image').src = `{{ url_for('heatmap_bp.get_final_heatmap', upload_id='')}}${analysis2.upload_id}`;
+            
+            document.getElementById('analysis1Link').href = `{{ url_for('heatmap_bp.view_analysis', upload_id='')}}${analysis1.upload_id}`;
+            document.getElementById('analysis2Link').href = `{{ url_for('heatmap_bp.view_analysis', upload_id='')}}${analysis2.upload_id}`;
+            
+            // 테이블 헤더 업데이트
+            document.getElementById('analysis1Name').textContent = analysis1.original_filename;
+            document.getElementById('analysis2Name').textContent = analysis2.original_filename;
+            
+            // 통계 테이블 업데이트
+            document.getElementById('analysis1TotalPersons').textContent = analysis1.total_persons + '명';
+            document.getElementById('analysis2TotalPersons').textContent = analysis2.total_persons + '명';
+            
+            const totalPersonsDiff = analysis2.total_persons - analysis1.total_persons;
+            const totalPersonsDiffElem = document.getElementById('diffTotalPersons');
+            totalPersonsDiffElem.textContent = `${totalPersonsDiff > 0 ? '+' : ''}${totalPersonsDiff}명`;
+            totalPersonsDiffElem.className = totalPersonsDiff > 0 ? 'stat-difference positive-diff' : 'stat-difference negative-diff';
+            
+            document.getElementById('analysis1MaxPersons').textContent = analysis1.max_persons + '명';
+            document.getElementById('analysis2MaxPersons').textContent = analysis2.max_persons + '명';
+            
+            const maxPersonsDiff = analysis2.max_persons - analysis1.max_persons;
+            const maxPersonsDiffElem = document.getElementById('diffMaxPersons');
+            maxPersonsDiffElem.textContent = `${maxPersonsDiff > 0 ? '+' : ''}${maxPersonsDiff}명`;
+            maxPersonsDiffElem.className = maxPersonsDiff > 0 ? 'stat-difference positive-diff' : 'stat-difference negative-diff';
+            
+            // 평균 인구 밀도 계산
+            const avgDensity1 = analysis1.total_persons / (analysis1.duration || 1);
+            const avgDensity2 = analysis2.total_persons / (analysis2.duration || 1);
+            
+            document.getElementById('analysis1AvgDensity').textContent = avgDensity1.toFixed(2) + '명/초';
+            document.getElementById('analysis2AvgDensity').textContent = avgDensity2.toFixed(2) + '명/초';
+            
+            const avgDensityDiff = avgDensity2 - avgDensity1;
+            const avgDensityDiffElem = document.getElementById('diffAvgDensity');
+            avgDensityDiffElem.textContent = `${avgDensityDiff > 0 ? '+' : ''}${avgDensityDiff.toFixed(2)}명/초`;
+            avgDensityDiffElem.className = avgDensityDiff > 0 ? 'stat-difference positive-diff' : 'stat-difference negative-diff';
+            
+            // 동영상 길이 업데이트
+            const formatDuration = (sec) => {
+                const minutes = Math.floor(sec / 60);
+                const seconds = Math.floor(sec % 60);
+                return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            };
+            
+            document.getElementById('analysis1Duration').textContent = formatDuration(analysis1.duration);
+            document.getElementById('analysis2Duration').textContent = formatDuration(analysis2.duration);
+            
+            const durationDiff = analysis2.duration - analysis1.duration;
+            const durationDiffElem = document.getElementById('diffDuration');
+            durationDiffElem.textContent = `${durationDiff > 0 ? '+' : ''}${formatDuration(Math.abs(durationDiff))}`;
+            durationDiffElem.className = 'stat-difference';
+            
+            // 차트 업데이트
+            createComparisonChart(analysis1, analysis2);
+        }
+        
+        // 비교 차트 생성 함수
+        function createComparisonChart(analysis1, analysis2) {
+            const ctx = document.getElementById('comparisonChart').getContext('2d');
+            
+            // 시간대별 데이터 추출
+            const timeStats1 = analysis1.time_stats;
+            const timeStats2 = analysis2.time_stats;
+            
+            // 모든 시간대를 포함하는 레이블 생성
+            const allTimeKeys = new Set([
+                ...Object.keys(timeStats1),
+                ...Object.keys(timeStats2)
+            ]);
+            
+            // 레이블 및 데이터 배열 생성
+            const sortedTimeKeys = Array.from(allTimeKeys).sort((a, b) => parseInt(a) - parseInt(b));
+            
+            const labels = sortedTimeKeys.map(key => {
+                const seconds = parseInt(key);
+                const minutes = Math.floor(seconds / 60);
+                const remainingSeconds = seconds % 60;
+                return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+            });
+            
+            const data1 = sortedTimeKeys.map(key => (timeStats1[key]?.avg_persons || 0));
+            const data2 = sortedTimeKeys.map(key => (timeStats2[key]?.avg_persons || 0));
+            
+            // 차트 생성
+            if (window.comparisonChart) {
+                window.comparisonChart.destroy();
+            }
+            
+            window.comparisonChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: analysis1.original_filename,
+                            data: data1,
+                            backgroundColor: 'rgba(52, 152, 219, 0.2)',
+                            borderColor: 'rgba(52, 152, 219, 1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            pointRadius: 3
+                        },
+                        {
+                            label: analysis2.original_filename,
+                            data: data2,
+                            backgroundColor: 'rgba(231, 76, 60, 0.2)',
+                            borderColor: 'rgba(231, 76, 60, 1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            pointRadius: 3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: ${context.raw.toFixed(1)}명`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '평균 인원 수 (명)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: '시간 (분:초)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    });
+</script>
+{% endblock %} 

@@ -1,0 +1,215 @@
+{% extends "layout.html" %}
+
+{% block title %}동영상 업로드 - 동영상 히트맵 분석{% endblock %}
+
+{% block head %}
+<style>
+    /* 모달 위치 고정 */
+    .modal-dialog {
+        position: fixed;
+        margin: auto;
+        width: 500px;
+        height: 100%;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+    
+    /* 테이블 내 버튼 영역 너비 고정 */
+    .table th, .table td {
+        vertical-align: middle;
+    }
+    
+    .table .btn-col {
+        width: 120px;
+        text-align: center;
+    }
+    
+    .table .status-col {
+        width: 100px;
+        text-align: center;
+    }
+    
+    .table .date-col {
+        width: 180px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-4">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h2 class="mb-0"><i class="fas fa-upload me-2"></i>동영상 업로드</h2>
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('upload_bp.process_video') }}" method="post" enctype="multipart/form-data" id="uploadForm">
+                    <div class="mb-4">
+                        <label for="video" class="form-label fw-bold">동영상 파일 선택</label>
+                        <input type="file" class="form-control" id="video" name="video" accept="video/*" required>
+                        <div class="form-text text-muted">
+                            지원 형식: MP4, AVI, MOV, WMV, MKV (용량 제한 없음)
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <h5 class="alert-heading"><i class="fas fa-info-circle me-2"></i>분석 과정 안내</h5>
+                        <ol class="mb-0">
+                            <li>선택한 동영상이 서버에 업로드됩니다.</li>
+                            <li>YOLOv8m 모델이 동영상에서 사람 객체를 감지합니다.</li>
+                            <li>동영상은 720p로 변환되고 10프레임 단위로 히트맵이 생성됩니다.</li>
+                            <li>분석 결과는 마리아DB에 저장되어 언제든지 확인할 수 있습니다.</li>
+                            <li>분석이 완료되면 상세 히트맵과 통계 정보를 확인할 수 있습니다.</li>
+                        </ol>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg" id="uploadBtn">
+                            <i class="fas fa-cloud-upload-alt me-2"></i>업로드 및 분석하기
+                        </button>
+                    </div>
+                </form>
+                
+                <div class="progress mt-3 d-none" id="uploadProgress">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if recent_uploads %}
+<div class="row justify-content-center mt-4">
+    <div class="col-lg-10">
+        <div class="card">
+            <div class="card-header bg-dark text-white">
+                <h3 class="mb-0"><i class="fas fa-history me-2"></i>최근 업로드 목록</h3>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>파일명</th>
+                                <th class="date-col">업로드 일시</th>
+                                <th class="date-col">분석 일시</th>
+                                <th class="status-col">상태</th>
+                                <th class="btn-col">결과</th>
+                                <th class="btn-col">관리</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for upload in recent_uploads %}
+                            <tr>
+                                <td>{{ upload.original_filename }}</td>
+                                <td>{{ upload.upload_date.strftime('%Y-%m-%d %H:%M') }}</td>
+                                <td>{{ upload.analysis_date.strftime('%Y-%m-%d %H:%M') if upload.analysis_date else '-' }}</td>
+                                <td class="text-center">
+                                    {% if upload.status == 'pending' %}
+                                        <span class="badge bg-warning">대기 중</span>
+                                    {% elif upload.status == 'processing' %}
+                                        <span class="badge bg-info">처리 중</span>
+                                    {% elif upload.status == 'completed' %}
+                                        <span class="badge bg-success">완료</span>
+                                    {% elif upload.status == 'failed' %}
+                                        <span class="badge bg-danger">실패</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <a href="{{ url_for('heatmap_bp.view_analysis', upload_id=upload.upload_id) }}" class="btn btn-sm btn-primary">
+                                        <i class="fas fa-chart-area me-1"></i>결과 보기
+                                    </a>
+                                </td>
+                                <td class="text-center">
+                                    <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#deleteModal{{ upload.id }}">
+                                        <i class="fas fa-trash-alt me-1"></i>삭제
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal-container">
+    {% for upload in recent_uploads %}
+    <div class="modal fade" id="deleteModal{{ upload.id }}" tabindex="-1" aria-labelledby="deleteModalLabel{{ upload.id }}" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteModalLabel{{ upload.id }}">삭제 확인</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p><strong>{{ upload.original_filename }}</strong> 파일과 관련된 모든 분석 데이터를 삭제하시겠습니까?</p>
+                    <p class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> 이 작업은 되돌릴 수 없습니다.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                    <form action="{{ url_for('heatmap_bp.delete_analysis', upload_id=upload.upload_id) }}" method="post">
+                        <button type="submit" class="btn btn-danger">삭제</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const uploadForm = document.getElementById('uploadForm');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const uploadProgress = document.getElementById('uploadProgress');
+        const progressBar = uploadProgress.querySelector('.progress-bar');
+        
+        uploadForm.addEventListener('submit', function(e) {
+            const fileInput = document.getElementById('video');
+            if (!fileInput.files.length) {
+                e.preventDefault();
+                alert('파일을 선택해주세요.');
+                return;
+            }
+            
+            // 업로드 버튼 비활성화 및 프로그레스 바 표시
+            uploadBtn.disabled = true;
+            uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>업로드 중...';
+            uploadProgress.classList.remove('d-none');
+            
+            // 프로그레스 바 시뮬레이션
+            let progress = 0;
+            const interval = setInterval(function() {
+                if (progress >= 90) {
+                    clearInterval(interval);
+                } else {
+                    progress += 1;
+                    progressBar.style.width = progress + '%';
+                    progressBar.setAttribute('aria-valuenow', progress);
+                }
+            }, 500);
+        });
+        
+        // 모달 위치 고정
+        const modals = document.querySelectorAll('.modal');
+        modals.forEach(modal => {
+            modal.addEventListener('show.bs.modal', function() {
+                setTimeout(() => {
+                    const modalDialog = this.querySelector('.modal-dialog');
+                    if (modalDialog) {
+                        modalDialog.style.top = '50%';
+                        modalDialog.style.transform = 'translate(-50%, -50%)';
+                    }
+                }, 200);
+            });
+        });
+    });
+</script>
+{% endblock %} 

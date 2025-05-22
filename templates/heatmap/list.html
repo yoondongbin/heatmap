@@ -1,0 +1,147 @@
+{% extends "layout.html" %}
+
+{% block title %}히트맵 분석 목록 - 동영상 히트맵 분석{% endblock %}
+
+{% block head %}
+<style>
+
+    .modal-dialog {
+        position: fixed;
+        margin: auto;
+        width: 500px;
+        height: 100%;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="mb-0"><i class="fas fa-fire me-2"></i>히트맵 분석 목록</h1>
+            <a href="{{ url_for('upload_bp.upload_page') }}" class="btn btn-primary">
+                <i class="fas fa-upload me-1"></i> 새 동영상 업로드
+            </a>
+        </div>
+
+        {% if analyses %}
+        <div class="row">
+            {% for analysis in analyses %}
+            <div class="col-lg-4 col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0 text-truncate" title="{{ analysis.original_filename }}">
+                            <i class="fas fa-film me-2"></i>{{ analysis.original_filename }}
+                        </h5>
+                    </div>
+                    
+                    {% if analysis.heatmap_path %}
+                    <div class="position-relative">
+                        <img src="{{ url_for('heatmap_bp.get_final_heatmap', upload_id=analysis.upload_id) }}" 
+                             class="card-img-top" alt="히트맵 이미지" style="height: 300px; object-fit: contain; background-color: #f0f0f0; padding: 15px; border: 1px solid #ddd;">
+                        <div class="position-absolute bottom-0 end-0 p-2">
+                            <span class="badge bg-success">완료</span>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="bg-light d-flex justify-content-center align-items-center" style="height: 180px;">
+                        <div class="text-center">
+                            <i class="fas fa-image fa-4x text-muted mb-2"></i>
+                            <p class="mb-0">이미지 없음</p>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <p class="card-text mb-1">
+                                <i class="fas fa-calendar-alt me-2"></i>분석 일시: 
+                                <span class="text-muted">{{ analysis.analysis_date.strftime('%Y-%m-%d %H:%M') }}</span>
+                            </p>
+                            <p class="card-text mb-1">
+                                <i class="fas fa-users me-2"></i>총 탐지 인원: 
+                                <span class="fw-bold text-primary">{{ analysis.total_persons }}명</span>
+                            </p>
+                            <p class="card-text mb-0">
+                                <i class="fas fa-clock me-2"></i>동영상 길이: 
+                                <span class="text-muted">{{ '%d분 %d초'|format(analysis.duration//60, analysis.duration%60) }}</span>
+                            </p>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <a href="{{ url_for('heatmap_bp.view_analysis', upload_id=analysis.upload_id) }}" 
+                               class="btn btn-primary">
+                                <i class="fas fa-chart-area me-1"></i> 상세 분석 보기
+                            </a>
+                            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteModal{{ analysis.id }}">
+                                <i class="fas fa-trash-alt me-1"></i> 삭제하기
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+
+        <div class="modal-container">
+            {% for analysis in analyses %}
+            <div class="modal fade" id="deleteModal{{ analysis.id }}" tabindex="-1" aria-labelledby="deleteModalLabel{{ analysis.id }}" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="deleteModalLabel{{ analysis.id }}">삭제 확인</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p><strong>{{ analysis.original_filename }}</strong> 파일과 관련된 모든 분석 데이터를 삭제하시겠습니까?</p>
+                            <p class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i> 이 작업은 되돌릴 수 없습니다.</p>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                            <form action="{{ url_for('heatmap_bp.delete_analysis', upload_id=analysis.upload_id) }}" method="post">
+                                <button type="submit" class="btn btn-danger">삭제</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        {% else %}
+        <div class="alert alert-info text-center py-5">
+            <i class="fas fa-info-circle fa-3x mb-3"></i>
+            <h4>분석 완료된 히트맵이 없습니다.</h4>
+            <p class="mb-4">새로운 동영상을 업로드하여 분석을 시작하세요.</p>
+            <a href="{{ url_for('upload_bp.upload_page') }}" class="btn btn-primary btn-lg">
+                <i class="fas fa-upload me-1"></i> 동영상 업로드하기
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 모달 위치 고정
+        const modals = document.querySelectorAll('.modal');
+        modals.forEach(modal => {
+            modal.addEventListener('show.bs.modal', function() {
+                setTimeout(() => {
+                    const modalDialog = this.querySelector('.modal-dialog');
+                    if (modalDialog) {
+                        modalDialog.style.top = '50%';
+                        modalDialog.style.transform = 'translate(-50%, -50%)';
+                    }
+                }, 200);
+            });
+        });
+    });
+</script>
+{% endblock %} 

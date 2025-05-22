@@ -1,0 +1,620 @@
+{% extends "layout.html" %}
+
+{% block title %}히트맵 분석 결과 - {{ analysis.original_filename }}{% endblock %}
+
+{% block head %}
+<style>
+    .video-container {
+        position: relative;
+        padding-bottom: 56.25%; 
+        height: 0;
+        overflow: hidden;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        background-color: #000;
+    }
+    
+    .video-container video {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+    }
+    
+    .video-error {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 15px;
+        border-radius: 8px;
+        text-align: center;
+        max-width: 80%;
+    }
+    
+    .chart-container {
+        height: 300px;
+        margin-top: 20px;
+    }
+    
+    .nav-tabs .nav-link {
+        color: #000000;
+        font-weight: 500;
+        background-color: #f8f9fa;
+    }
+    
+    .nav-tabs .nav-link.active {
+        color: var(--primary-color);
+        font-weight: 700;
+        background-color: #ffffff;
+    }
+    
+
+    .final-heatmap-image {
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        max-height: none;
+    }
+    
+
+    .final-heatmap-container {
+        margin-top: 20px;
+        margin-bottom: 30px;
+        background-color: #f0f0f0; 
+        padding: 20px;
+        border-radius: 10px;
+        border: 1px solid #ddd;
+    }
+    
+    .heatmap-description {
+        background-color: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 10px 15px;
+        border-radius: 5px;
+        margin-top: 15px;
+        font-weight: bold;
+    }
+    
+    .stat-card {
+        background-color: white;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        transition: transform 0.3s, box-shadow 0.3s;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+    }
+    
+    .stat-number {
+        font-size: 2rem;
+        font-weight: 700;
+        display: block;
+        color: var(--primary-color);
+        margin-bottom: 5px;
+    }
+    
+    .stat-title {
+        color: #666;
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
+    
+    .stat-icon {
+        font-size: 2.5rem;
+        color: #ccc;
+        opacity: 0.7;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <a href="{{ url_for('heatmap_bp.heatmap_list') }}" class="btn btn-outline-secondary mb-2">
+                    <i class="fas fa-arrow-left me-1"></i> 목록으로 돌아가기
+                </a>
+                <h1 class="mb-0">{{ analysis.original_filename }}</h1>
+                <p class="text-muted mb-0">
+                    <i class="fas fa-calendar-alt me-1"></i> 업로드: {{ analysis.upload_date.strftime('%Y-%m-%d %H:%M') }}
+                    | <i class="fas fa-clock me-1"></i> 분석: {{ analysis.analysis_date.strftime('%Y-%m-%d %H:%M') if analysis.analysis_date else '진행 중' }}
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if analysis.status == 'pending' or analysis.status == 'processing' %}
+<div class="loading-container">
+    <div class="loading-spinner"></div>
+    <h3>동영상 분석 진행 중...</h3>
+    <p class="text-muted">동영상 길이에 따라 분석에 시간이 소요될 수 있습니다.</p>
+    <div class="progress mt-3" style="width: 50%;">
+        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%" id="analysisProgress"></div>
+    </div>
+</div>
+{% else %}
+
+<!-- 통계 요약 -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="stat-number">{{ analysis.total_persons }}</span>
+                    <span class="stat-title">총 탐지 인원</span>
+                </div>
+                <div class="stat-icon">
+                    <i class="fas fa-users"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="stat-number">{{ analysis.max_persons }}</span>
+                    <span class="stat-title">최대 동시 인원</span>
+                </div>
+                <div class="stat-icon">
+                    <i class="fas fa-user-friends"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="stat-number">{{ '%d:%02d'|format(analysis.duration//60, analysis.duration%60) }}</span>
+                    <span class="stat-title">동영상 길이</span>
+                </div>
+                <div class="stat-icon">
+                    <i class="fas fa-film"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card status-{{ analysis.status }}">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="stat-number">
+                        {% if analysis.status == 'completed' %}완료{% else %}{{ analysis.status }}{% endif %}
+                    </span>
+                    <span class="stat-title">분석 상태</span>
+                </div>
+                <div class="stat-icon">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 탭 네비게이션 -->
+<ul class="nav nav-tabs mb-4" id="analysisTab" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="heatmap-tab" data-bs-toggle="tab" data-bs-target="#heatmap" type="button" role="tab">
+            <i class="fas fa-fire me-1"></i> 히트맵 영상
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="video-tab" data-bs-toggle="tab" data-bs-target="#video" type="button" role="tab">
+            <i class="fas fa-video me-1"></i> 객체 탐지 영상
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="stats-tab" data-bs-toggle="tab" data-bs-target="#stats" type="button" role="tab">
+            <i class="fas fa-chart-bar me-1"></i> 분석 통계
+        </button>
+    </li>
+</ul>
+
+
+<div class="tab-content" id="analysisTabContent">
+    <!-- 히트맵 탭 -->
+    <div class="tab-pane fade show active" id="heatmap" role="tabpanel">
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="card mb-4">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0"><i class="fas fa-fire me-2"></i>히트맵 영상</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- 히트맵 비디오 -->
+                        <div class="video-container">
+                            <video id="heatmapVideo" controls crossorigin="anonymous" muted autoplay controlsList="nodownload">
+                                <source id="heatmapSource" src="{{ url_for('heatmap_bp.get_video', type='heatmap', upload_id=analysis.upload_id) }}?t={{ now().timestamp() }}" type="video/mp4">
+                                브라우저가 비디오 재생을 지원하지 않습니다.
+                            </video>
+                            <div class="video-error" id="heatmapError" style="display:none">
+                                <p>비디오 재생 오류가 발생했습니다. <button class="btn btn-sm btn-primary retry-video" data-video="heatmap">다시 시도</button></p>
+                                <p><a href="{{ url_for('heatmap_bp.get_video', type='heatmap', upload_id=analysis.upload_id) }}?download=1" class="btn btn-sm btn-outline-secondary">비디오 직접 다운로드</a></p>
+                            </div>
+                        </div>
+                        <p class="text-center mt-2">
+                            <a href="{{ url_for('heatmap_bp.get_video', type='heatmap', upload_id=analysis.upload_id) }}?download=1" class="btn btn-sm btn-outline-secondary">
+                                <i class="fas fa-download me-1"></i> 다운로드
+                            </a>
+                        </p>
+                        <p class="text-muted mt-2">
+                            <small><i class="fas fa-info-circle me-1"></i>동영상 재생 시 10프레임 단위로 히트맵이 표시됩니다. 총 {{ analysis.frame_count|default(0) }}프레임, {{ '%d:%02d'|format(analysis.duration//60, analysis.duration%60) }} 길이</small>
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4">
+                <div class="card mb-4">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0"><i class="fas fa-map-marked-alt me-2"></i>최종 히트맵</h5>
+                    </div>
+                    <div class="card-body final-heatmap-container">
+                        <img src="{{ url_for('heatmap_bp.get_final_heatmap', upload_id=analysis.upload_id) }}" alt="최종 히트맵" class="final-heatmap-image mb-2" style="width: 100%; height: auto; max-height: none;">
+                        <div class="heatmap-description">
+                            <i class="fas fa-info-circle me-1"></i>전체 영상에 대한 누적 히트맵입니다. 색상이 진할수록 사람들이 많이 머문 구역입니다.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 객체 탐지 영상 탭 -->
+    <div class="tab-pane fade" id="video" role="tabpanel">
+        <div class="row">
+            <div class="col-lg-12">
+                <div class="card mb-4">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0"><i class="fas fa-box me-2"></i>바운딩 박스 영상</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- 바운딩 박스 비디오 -->
+                        <div class="video-container">
+                            <video id="bboxVideo" controls crossorigin="anonymous" muted autoplay controlsList="nodownload">
+                                <source id="bboxSource" src="{{ url_for('heatmap_bp.get_video', type='bounding_box', upload_id=analysis.upload_id) }}?t={{ now().timestamp() }}" type="video/mp4">
+                                브라우저가 비디오 재생을 지원하지 않습니다.
+                            </video>
+                            <div class="video-error" id="bboxError" style="display:none">
+                                <p>비디오 재생 오류가 발생했습니다. <button class="btn btn-sm btn-primary retry-video" data-video="bbox">다시 시도</button></p>
+                                <p><a href="{{ url_for('heatmap_bp.get_video', type='bounding_box', upload_id=analysis.upload_id) }}?download=1" class="btn btn-sm btn-outline-secondary">비디오 직접 다운로드</a></p>
+                            </div>
+                        </div>
+                        <p class="text-center mt-2">
+                            <a href="{{ url_for('heatmap_bp.get_video', type='bounding_box', upload_id=analysis.upload_id) }}?download=1" class="btn btn-sm btn-outline-secondary">
+                                <i class="fas fa-download me-1"></i> 다운로드
+                            </a>
+                        </p>
+                        <p class="text-muted mt-2">
+                            <small><i class="fas fa-info-circle me-1"></i>객체 인식이 적용된 영상입니다. 각 사람마다 바운딩 박스가 표시됩니다.</small>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 통계 탭 -->
+    <div class="tab-pane fade" id="stats" role="tabpanel">
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="card mb-4">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>프레임별 인원 수 변화</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="timeChart"></canvas>
+                        </div>
+                        <p class="text-muted mt-2 text-center">
+                            <small><i class="fas fa-info-circle me-1"></i>표시된 데이터는 1초 단위로 저장된 통계입니다. 프레임 단위로 표시됩니다.</small>
+                        </p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="card">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0"><i class="fas fa-table me-2"></i>프레임별 통계</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover table-striped mb-0" id="timeStatsTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>시간(초)</th>
+                                        <th>인원 수</th>
+                                        <th>혼잡도</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if analysis.status == 'pending' or analysis.status == 'processing' %}
+<script type="text/javascript">
+// 분석 상태 확인 스크립트
+document.addEventListener('DOMContentLoaded', function() {
+    // 분석 상태 확인 함수
+    function checkAnalysisStatus() {
+        fetch('{{ url_for("upload_bp.check_status", upload_id=analysis.upload_id) }}')
+            .then(response => response.json())
+            .then(data => {
+                // 프로그레스 바 업데이트
+                const progressBar = document.getElementById('analysisProgress');
+                
+                if (data.status === 'completed') {
+                    progressBar.style.width = '100%';
+
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                } else if (data.status === 'failed') {
+                    progressBar.classList.remove('progress-bar-animated');
+                    progressBar.classList.add('bg-danger');
+                    progressBar.style.width = '100%';
+                    alert('분석 중 오류가 발생했습니다: ' + data.error);
+                } else if (data.status === 'processing') {
+                    // 랜덤하게 진행률 시뮬레이션
+                    const currentWidth = parseInt(progressBar.style.width) || 0;
+                    if (currentWidth < 90) {
+                        progressBar.style.width = (currentWidth + Math.random() * 5) + '%';
+                    }
+                    // 계속 상태 확인
+                    setTimeout(checkAnalysisStatus, 5000);
+                }
+            })
+            .catch(error => {
+                console.error('상태 확인 중 오류 발생:', error);
+            });
+    }
+    
+    // 초기 상태 확인 시작
+    checkAnalysisStatus();
+});
+</script>
+{% else %}
+<script type="text/javascript">
+// 기본 문서 로드 및 비디오 관련 코드
+document.addEventListener('DOMContentLoaded', function() {
+    console.log("분석 결과 페이지 로드됨");
+    
+    // 비디오 로드 상태 확인 및 에러 표시 개선
+    const videos = document.querySelectorAll('video');
+    let retryCount = {};
+    
+    videos.forEach(video => {
+        const videoId = video.id;
+        retryCount[videoId] = 0;
+        
+        // 로딩 문제 처리
+        video.addEventListener('error', function(e) {
+            console.error(`비디오 로드 오류 (${videoId}):`, e);
+            const errorDiv = this.nextElementSibling;
+            if (errorDiv && errorDiv.classList.contains('video-error')) {
+                errorDiv.style.display = 'block';
+            }
+            
+            // 자동 재시도
+            if (retryCount[videoId] < 3) {
+                retryCount[videoId]++;
+                console.log(`자동 재시도 ${retryCount[videoId]}/3 (${videoId})`);
+                setTimeout(() => reloadVideo(videoId), 2000);
+            } else {
+                console.warn(`최대 재시도 횟수 초과 (${videoId})`);
+            }
+        });
+        
+        // 재생 시작 시 오류 메시지 숨기기
+        video.addEventListener('playing', function() {
+            const errorDiv = this.nextElementSibling;
+            if (errorDiv && errorDiv.classList.contains('video-error')) {
+                errorDiv.style.display = 'none';
+            }
+        });
+    });
+    
+    // 재시도 버튼 이벤트 리스너 등록
+    document.querySelectorAll('.retry-video').forEach(button => {
+        button.addEventListener('click', function() {
+            const videoId = this.dataset.video + 'Video';
+            reloadVideo(videoId);
+        });
+    });
+    
+    // 비디오 다시 로드 함수
+    function reloadVideo(videoId) {
+        const video = document.getElementById(videoId);
+        const source = video.querySelector('source');
+        
+        if (video && source) {
+            // 새 타임스탬프로 URL 갱신
+            const baseUrl = source.src.split('?')[0];
+            const newUrl = `${baseUrl}?t=${new Date().getTime()}`;
+            source.src = newUrl;
+            
+            // 비디오 다시 로드
+            video.load();
+            
+            // 자동 재생 시도
+            video.play().catch(e => {
+                console.warn(`자동 재생 실패 (${videoId}):`, e);
+            });
+        }
+    }
+    
+    // 차트 및 통계 로드
+    loadAnalysisData();
+});
+
+// 비디오 정보 계산용 변수
+const videoDuration = {{ analysis.duration|default(1) }};
+const videoFrameCount = {{ analysis.frame_count|default(0) }};
+const videoFps = videoFrameCount > 0 ? Math.round(videoFrameCount / videoDuration) : 30; // 기본 fps는 30으로 가정
+
+// 분석 데이터 로드 함수
+function loadAnalysisData() {
+    fetch('{{ url_for("heatmap_bp.get_analysis_data", upload_id=analysis.upload_id) }}')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('데이터를 가져오는 중 오류가 발생했습니다.');
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log("분석 데이터 로드됨");
+            
+            // 시간대별 통계 데이터가 있는 경우 차트 생성
+            if (data.time_stats) {
+                createTimeChart(data.time_stats);
+                createStatsTable(data.time_stats);
+            }
+        })
+        .catch(error => {
+            console.error('데이터 로드 중 오류:', error);
+        });
+}
+
+// 차트 생성 함수 재작성
+function createTimeChart(time_stats) {
+    const ctx = document.getElementById('timeChart');
+    if (!ctx) return;
+    
+    // 데이터 준비
+    const labels = [];
+    const data = [];
+    
+    Object.keys(time_stats).sort((a, b) => parseInt(a) - parseInt(b)).forEach(key => {
+        const seconds = parseInt(key);
+        const minutes = Math.floor(seconds / 60);
+        const remainingSecs = seconds % 60;
+        const frameNum = Math.round(seconds * videoFps);
+        
+        labels.push(`${minutes}:${remainingSecs < 10 ? '0' + remainingSecs : remainingSecs} (F:${frameNum})`);
+        data.push(time_stats[key].avg_persons || 0);
+    });
+    
+    // 이전 차트 제거
+    if (window.timeChart && typeof window.timeChart.destroy === 'function') {
+        window.timeChart.destroy();
+    }
+    
+    // 새 차트 생성
+    window.timeChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '탐지된 인원 (10프레임 간격)',
+                data: data,
+                backgroundColor: 'rgba(52, 152, 219, 0.2)',
+                borderColor: 'rgba(52, 152, 219, 1)',
+                borderWidth: 2,
+                tension: 0.3,
+                pointRadius: 3,
+                pointBackgroundColor: 'rgba(52, 152, 219, 1)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'top' },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) { return `인원: ${context.raw.toFixed(1)}명`; },
+                        title: function(tooltipItems) { return tooltipItems[0].label; }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: '인원 수' },
+                    ticks: { callback: function(value) { return value.toFixed(0); } }
+                },
+                x: {
+                    title: { display: true, text: '시간 (분:초) / 프레임 번호' }
+                }
+            }
+        }
+    });
+}
+
+// 통계 테이블 생성 함수
+function createStatsTable(time_stats) {
+    const tableBody = document.querySelector('#timeStatsTable tbody');
+    if (!tableBody) return;
+    
+    tableBody.innerHTML = '';
+    
+    // 초 별로 정렬
+    Object.keys(time_stats).sort((a, b) => parseInt(a) - parseInt(b)).forEach(key => {
+        const stat = time_stats[key];
+        
+        // 시간 표시
+        const seconds = parseInt(key);
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        const timeLabel = `${minutes}:${remainingSeconds < 10 ? '0' + remainingSeconds : remainingSeconds}`;
+        
+        // 추정 프레임 번호
+        const frameNumber = Math.round(seconds * videoFps);
+        
+        // 평균 인원 수
+        const avgPersons = Number(stat.avg_persons || 0).toFixed(1);
+        
+        // 혼잡도 계산
+        let congestionLevel, congestionClass;
+        const avgPersonsNum = parseFloat(avgPersons);
+        
+        if (avgPersonsNum >= 8) {
+            congestionLevel = '매우 혼잡';
+            congestionClass = 'danger';
+        } else if (avgPersonsNum >= 5) {
+            congestionLevel = '혼잡';
+            congestionClass = 'warning';
+        } else if (avgPersonsNum >= 2) {
+            congestionLevel = '약간 혼잡';
+            congestionClass = 'info';
+        } else {
+            congestionLevel = '원활';
+            congestionClass = 'success';
+        }
+        
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${timeLabel}<br><small class="text-muted">프레임: ${frameNumber}</small></td>
+            <td>${avgPersons}명</td>
+            <td><span class="badge bg-${congestionClass}">${congestionLevel}</span></td>
+        `;
+        
+        tableBody.appendChild(row);
+    });
+}
+</script>
+{% endif %}
+{% endblock %} 
